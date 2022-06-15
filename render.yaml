@@ -3,7 +3,7 @@ services:
     name: app
     env: docker
     region: frankfurt
-    plan: free
+    plan: starter
     branch: main
     healthCheckPath: /
     envVars:
