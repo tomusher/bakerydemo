@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     "bakerydemo.locations",
     "bakerydemo.recipes",
     "bakerydemo.search",
+    "django_ai_core.contrib.index",
+    "django_ai_core.contrib.index.storage.pgvector",
     "wagtail_ai",
     "wagtail.embeds",
     "wagtail.sites",
