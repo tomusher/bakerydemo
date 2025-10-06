@@ -1,41 +1,39 @@
-from __future__ import unicode_literals
-
 from django.contrib import messages
 from django.db import models
 from django.shortcuts import redirect, render
-
 from modelcluster.contrib.taggit import ClusterTaggableManager
 from modelcluster.fields import ParentalKey
-
 from taggit.models import Tag, TaggedItemBase
-
+from wagtail.admin.panels import FieldPanel, MultipleChooserPanel
+from wagtail.api import APIField
 from wagtail.contrib.routable_page.models import RoutablePageMixin, route
-from wagtail.admin.panels import FieldPanel, InlinePanel, StreamFieldPanel
 from wagtail.fields import StreamField
-from wagtail.models import Page, Orderable
-from wagtail.images.edit_handlers import ImageChooserPanel
+from wagtail.models import Orderable, Page
 from wagtail.search import index
-from wagtail.snippets.edit_handlers import SnippetChooserPanel
 
 from bakerydemo.base.blocks import BaseStreamBlock
 
 
-class BlogPeopleRelationship(Orderable, models.Model):
+class BlogPersonRelationship(Orderable, models.Model):
     """
-    This defines the relationship between the `People` within the `base`
-    app and the BlogPage below. This allows People to be added to a BlogPage.
+    This defines the relationship between the `Person` within the `base`
+    app and the BlogPage below. This allows people to be added to a BlogPage.
 
-    We have created a two way relationship between BlogPage and People using
+    We have created a two way relationship between BlogPage and Person using
     the ParentalKey and ForeignKey
     """
+
     page = ParentalKey(
-        'BlogPage', related_name='blog_person_relationship', on_delete=models.CASCADE
+        "BlogPage", related_name="blog_person_relationship", on_delete=models.CASCADE
     )
-    people = models.ForeignKey(
-        'base.People', related_name='person_blog_relationship', on_delete=models.CASCADE
+    person = models.ForeignKey(
+        "base.Person", related_name="person_blog_relationship", on_delete=models.CASCADE
     )
-    panels = [
-        SnippetChooserPanel('people')
+    panels = [FieldPanel("person")]
+
+    api_fields = [
+        APIField("page"),
+        APIField("person"),
     ]
 
 
@@ -45,66 +43,83 @@ class BlogPageTag(TaggedItemBase):
     the BlogPage object and tags. There's a longer guide on using it at
     https://docs.wagtail.org/en/stable/reference/pages/model_recipes.html#tagging
     """
-    content_object = ParentalKey('BlogPage', related_name='tagged_items', on_delete=models.CASCADE)
+
+    content_object = ParentalKey(
+        "BlogPage", related_name="tagged_items", on_delete=models.CASCADE
+    )
 
 
 class BlogPage(Page):
     """
     A Blog Page
 
-    We access the People object with an inline panel that references the
-    ParentalKey's related_name in BlogPeopleRelationship. More docs:
+    We access the Person object with an inline panel that references the
+    ParentalKey's related_name in BlogPersonRelationship. More docs:
     https://docs.wagtail.org/en/stable/topics/pages.html#inline-models
     """
-    introduction = models.TextField(
-        help_text='Text to describe the page',
-        blank=True)
+
+    introduction = models.TextField(help_text="Text to describe the page", blank=True)
     image = models.ForeignKey(
-        'wagtailimages.Image',
+        "wagtailimages.Image",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name='+',
-        help_text='Landscape mode only; horizontal width between 1000px and 3000px.'
+        related_name="+",
+        help_text="Landscape mode only; horizontal width between 1000px and 3000px.",
     )
     body = StreamField(
-        BaseStreamBlock(), verbose_name="Page body", blank=True
+        BaseStreamBlock(), verbose_name="Page body", blank=True, use_json_field=True
     )
     subtitle = models.CharField(blank=True, max_length=255)
     tags = ClusterTaggableManager(through=BlogPageTag, blank=True)
-    date_published = models.DateField(
-        "Date article published", blank=True, null=True
-    )
+    date_published = models.DateField("Date article published", blank=True, null=True)
 
     content_panels = Page.content_panels + [
-        FieldPanel('subtitle', classname="full"),
-        FieldPanel('introduction', classname="full"),
-        ImageChooserPanel('image'),
-        StreamFieldPanel('body'),
-        FieldPanel('date_published'),
-        InlinePanel(
-            'blog_person_relationship', label="Author(s)",
-            panels=None, min_num=1),
-        FieldPanel('tags'),
+        FieldPanel("subtitle"),
+        FieldPanel("introduction"),
+        FieldPanel("image"),
+        FieldPanel("body"),
+        FieldPanel("date_published"),
+        MultipleChooserPanel(
+            "blog_person_relationship",
+            chooser_field_name="person",
+            heading="Authors",
+            label="Author",
+            panels=None,
+            min_num=1,
+        ),
+        FieldPanel("tags"),
     ]
 
     search_fields = Page.search_fields + [
-        index.SearchField('body'),
+        index.SearchField("body"),
+    ]
+
+    api_fields = [
+        APIField("introduction"),
+        APIField("image"),
+        APIField("body"),
+        APIField("subtitle"),
+        APIField("tags"),
+        APIField("date_published"),
+        APIField("blog_person_relationship"),
     ]
 
     def authors(self):
         """
-        Returns the BlogPage's related People. Again note that we are using
-        the ParentalKey's related_name from the BlogPeopleRelationship model
-        to access these objects. This allows us to access the People objects
+        Returns the BlogPage's related people. Again note that we are using
+        the ParentalKey's related_name from the BlogPersonRelationship model
+        to access these objects. This allows us to access the Person objects
         with a loop on the template. If we tried to access the blog_person_
-        relationship directly we'd print `blog.BlogPeopleRelationship.None`
+        relationship directly we'd print `blog.BlogPersonRelationship.None`
         """
-        authors = [
-            n.people for n in self.blog_person_relationship.all()
+        # Only return authors that are not in draft
+        return [
+            n.person
+            for n in self.blog_person_relationship.filter(
+                person__live=True
+            ).select_related("person")
         ]
-
-        return authors
 
     @property
     def get_tags(self):
@@ -114,16 +129,13 @@ class BlogPage(Page):
         We're additionally adding a URL to access BlogPage objects with that tag
         """
         tags = self.tags.all()
+        base_url = self.get_parent().url
         for tag in tags:
-            tag.url = '/' + '/'.join(s.strip('/') for s in [
-                self.get_parent().url,
-                'tags',
-                tag.slug
-            ])
+            tag.url = f"{base_url}tags/{tag.slug}/"
         return tags
 
     # Specifies parent to BlogPage as being BlogIndexPages
-    parent_page_types = ['BlogIndexPage']
+    parent_page_types = ["BlogIndexPage"]
 
     # Specifies what content types can exist as children of BlogPage.
     # Empty list means that no child content types are allowed.
@@ -139,25 +151,29 @@ class BlogIndexPage(RoutablePageMixin, Page):
     RoutablePageMixin is used to allow for a custom sub-URL for the tag views
     defined above.
     """
-    introduction = models.TextField(
-        help_text='Text to describe the page',
-        blank=True)
+
+    introduction = models.TextField(help_text="Text to describe the page", blank=True)
     image = models.ForeignKey(
-        'wagtailimages.Image',
+        "wagtailimages.Image",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name='+',
-        help_text='Landscape mode only; horizontal width between 1000px and 3000px.'
+        related_name="+",
+        help_text="Landscape mode only; horizontal width between 1000px and 3000px.",
     )
 
     content_panels = Page.content_panels + [
-        FieldPanel('introduction', classname="full"),
-        ImageChooserPanel('image'),
+        FieldPanel("introduction"),
+        FieldPanel("image"),
     ]
 
-    # Speficies that only BlogPage objects can live under this index page
-    subpage_types = ['BlogPage']
+    api_fields = [
+        APIField("introduction"),
+        APIField("image"),
+    ]
+
+    # Specifies that only BlogPage objects can live under this index page
+    subpage_types = ["BlogPage"]
 
     # Defines a method to access the children of the page (e.g. BlogPage
     # objects). On the demo site we use this on the HomePage
@@ -169,19 +185,18 @@ class BlogIndexPage(RoutablePageMixin, Page):
     # https://docs.wagtail.org/en/stable/getting_started/tutorial.html#overriding-context
     def get_context(self, request):
         context = super(BlogIndexPage, self).get_context(request)
-        context['posts'] = BlogPage.objects.descendant_of(
-            self).live().order_by(
-            '-date_published')
+        context["posts"] = (
+            BlogPage.objects.descendant_of(self).live().order_by("-date_published")
+        )
         return context
 
     # This defines a Custom view that utilizes Tags. This view will return all
     # related BlogPages for a given Tag or redirect back to the BlogIndexPage.
     # More information on RoutablePages is at
     # https://docs.wagtail.org/en/stable/reference/contrib/routablepage.html
-    @route(r'^tags/$', name='tag_archive')
-    @route(r'^tags/([\w-]+)/$', name='tag_archive')
+    @route(r"^tags/$", name="tag_archive")
+    @route(r"^tags/([\w-]+)/$", name="tag_archive")
     def tag_archive(self, request, tag=None):
-
         try:
             tag = Tag.objects.get(slug=tag)
         except Tag.DoesNotExist:
@@ -191,11 +206,8 @@ class BlogIndexPage(RoutablePageMixin, Page):
             return redirect(self.url)
 
         posts = self.get_posts(tag=tag)
-        context = {
-            'tag': tag,
-            'posts': posts
-        }
-        return render(request, 'blog/blog_index_page.html', context)
+        context = {"self": self, "tag": tag, "posts": posts}
+        return render(request, "blog/blog_index_page.html", context)
 
     def serve_preview(self, request, mode_name):
         # Needed for previews to work

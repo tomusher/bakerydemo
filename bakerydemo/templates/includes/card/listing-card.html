@@ -4,7 +4,7 @@
     <a class="listing-card__link" href="{{ page.url }}">
         {% if page.image %}
             <figure class="listing-card__image">
-                {% image page.image fill-180x180-c100 loading="lazy" %}
+                {% picture page.image format-{avif,webp,jpeg} fill-180x180-c100 loading="lazy" %}
             </figure>
         {% endif %}
         <div class="listing-card__contents">
@@ -13,13 +13,13 @@
                 <table class="listing-card__meta">
                     {% if page.origin %}
                         <tr>
-                            <td class="listing-card__meta-category">Origin</td>
+                            <th scope="row" class="listing-card__meta-category">Origin</th>
                             <td class="listing-card__meta-content">{{ page.origin }}</td>
                         </tr>
                     {% endif %}
                     {% if page.bread_type %}
                         <tr>
-                            <td class="listing-card__meta-category">Type</td>
+                            <th scope="row" class="listing-card__meta-category">Type</th>
                             <td class="listing-card__meta-content">{{ page.bread_type }}</td>
                         </tr>
                     {% endif %}

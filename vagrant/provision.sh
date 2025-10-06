@@ -10,6 +10,12 @@ PYTHON=$VIRTUALENV_DIR/bin/python
 PIP=$VIRTUALENV_DIR/bin/pip
 
 
+# Update APT database
+apt-get update -y
+
+apt install -y python3-pip
+pip3 install virtualenv
+
 # Virtualenv setup for project
 su - $DEV_USER -c "virtualenv --python=python3 $VIRTUALENV_DIR"
 # Replace previous line with this if you are using Python 2
@@ -31,7 +37,7 @@ chmod a+x $PROJECT_DIR/manage.py
 # copy local settings file
 cp $PROJECT_DIR/bakerydemo/settings/local.py.example $PROJECT_DIR/bakerydemo/settings/local.py
 # add .env file for django-dotenv environment variable definitions
-echo DJANGO_SETTINGS_MODULE=$PROJECT_NAME.settings.local > $PROJECT_DIR/.env
+echo DJANGO_SETTINGS_MODULE=$PROJECT_NAME.settings.dev > $PROJECT_DIR/.env
 
 if [ -n "$USE_POSTGRESQL" ]
 then

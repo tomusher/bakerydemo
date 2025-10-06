@@ -1,10 +1,13 @@
-from wagtail.contrib.modeladmin.options import (
-    ModelAdmin, ModelAdminGroup, modeladmin_register)
+from wagtail import hooks
+from wagtail.admin.filters import WagtailFilterSet
+from wagtail.admin.userbar import AccessibilityItem
+from wagtail.snippets.models import register_snippet
+from wagtail.snippets.views.snippets import SnippetViewSet, SnippetViewSetGroup
 
-from bakerydemo.breads.models import Country, BreadIngredient, BreadType
-from bakerydemo.base.models import People, FooterText
+from bakerydemo.base.filters import RevisionFilterSetMixin
+from bakerydemo.base.models import FooterText, Person
 
-'''
+"""
 N.B. To see what icons are available for use in Wagtail menus and StreamField block types,
 enable the styleguide in settings:
 
@@ -16,57 +19,76 @@ INSTALLED_APPS = (
 
 or see https://thegrouchy.dev/general/2015/12/06/wagtail-streamfield-icons.html
 
-This demo project includes the full font-awesome set via CDN in base.html, so the entire
-font-awesome icon set is available to you. Options are at https://fontawesome.com/icons .
-'''
+This demo project also includes the wagtail-font-awesome-svg package, allowing further icons to be
+installed as detailed here: https://github.com/allcaps/wagtail-font-awesome-svg#usage
+"""
 
 
-class BreadIngredientAdmin(ModelAdmin):
-    # These stub classes allow us to put various models into the custom "Wagtail Bakery" menu item
-    # rather than under the default Snippets section.
-    model = BreadIngredient
-    search_fields = ('name', )
+@hooks.register("register_icons")
+def register_icons(icons):
+    return icons + [
+        "wagtailfontawesomesvg/solid/suitcase.svg",
+        "wagtailfontawesomesvg/solid/utensils.svg",
+    ]
 
 
-class BreadTypeAdmin(ModelAdmin):
-    model = BreadType
-    search_fields = ('title', )
+class CustomAccessibilityItem(AccessibilityItem):
+    axe_run_only = None
 
 
-class BreadCountryAdmin(ModelAdmin):
-    model = Country
-    search_fields = ('title', )
+@hooks.register("construct_wagtail_userbar")
+def replace_userbar_accessibility_item(request, items, page):
+    items[:] = [
+        CustomAccessibilityItem() if isinstance(item, AccessibilityItem) else item
+        for item in items
+    ]
 
 
-class BreadModelAdminGroup(ModelAdminGroup):
-    menu_label = 'Bread Categories'
-    menu_icon = 'fa-suitcase'  # change as required
-    menu_order = 200  # will put in 3rd place (000 being 1st, 100 2nd)
-    items = (BreadIngredientAdmin, BreadTypeAdmin, BreadCountryAdmin)
+class PersonFilterSet(RevisionFilterSetMixin, WagtailFilterSet):
+    class Meta:
+        model = Person
+        fields = {
+            "job_title": ["icontains"],
+            "live": ["exact"],
+            "locked": ["exact"],
+        }
 
 
-class PeopleModelAdmin(ModelAdmin):
-    model = People
-    menu_label = 'People'  # ditch this to use verbose_name_plural from model
-    menu_icon = 'fa-users'  # change as required
-    list_display = ('first_name', 'last_name', 'job_title', 'thumb_image')
-    list_filter = ('job_title', )
-    search_fields = ('first_name', 'last_name', 'job_title')
+class PersonViewSet(SnippetViewSet):
+    # Instead of decorating the Person model class definition in models.py with
+    # @register_snippet - which has Wagtail automatically generate an admin interface for this model - we can also provide our own
+    # SnippetViewSet class which allows us to customize the admin interface for this snippet.
+    # See the documentation for SnippetViewSet for more details
+    # https://docs.wagtail.org/en/stable/reference/viewsets.html#snippetviewset
+    model = Person
+    menu_label = "People"  # ditch this to use verbose_name_plural from model
+    icon = "group"  # change as required
+    list_display = ("first_name", "last_name", "job_title", "thumb_image")
+    list_export = ("first_name", "last_name", "job_title")
+    filterset_class = PersonFilterSet
 
 
-class FooterTextAdmin(ModelAdmin):
+class FooterTextFilterSet(RevisionFilterSetMixin, WagtailFilterSet):
+    class Meta:
+        model = FooterText
+        fields = {
+            "live": ["exact"],
+        }
+
+
+class FooterTextViewSet(SnippetViewSet):
     model = FooterText
-    search_fields = ('body',)
+    search_fields = ("body",)
+    filterset_class = FooterTextFilterSet
 
 
-class BakeryModelAdminGroup(ModelAdminGroup):
-    menu_label = 'Bakery Misc'
-    menu_icon = 'fa-cutlery'  # change as required
+class BakerySnippetViewSetGroup(SnippetViewSetGroup):
+    menu_label = "Bakery Misc"
+    menu_icon = "utensils"  # change as required
     menu_order = 300  # will put in 4th place (000 being 1st, 100 2nd)
-    items = (PeopleModelAdmin, FooterTextAdmin)
+    items = (PersonViewSet, FooterTextViewSet)
 
 
-# When using a ModelAdminGroup class to group several ModelAdmin classes together,
-# you only need to register the ModelAdminGroup class with Wagtail:
-modeladmin_register(BreadModelAdminGroup)
-modeladmin_register(BakeryModelAdminGroup)
+# When using a SnippetViewSetGroup class to group several SnippetViewSet classes together,
+# you only need to register the SnippetViewSetGroup class with Wagtail:
+register_snippet(BakerySnippetViewSetGroup)

@@ -1,28 +1,23 @@
 from django import forms
+from django.contrib.contenttypes.fields import GenericRelation
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import models
-from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
-
 from modelcluster.fields import ParentalManyToManyField
-
-from wagtail.admin.panels import (
-    FieldPanel, MultiFieldPanel, StreamFieldPanel
-)
+from wagtail.admin.panels import FieldPanel, MultiFieldPanel
+from wagtail.api import APIField
 from wagtail.fields import StreamField
-from wagtail.models import Page
+from wagtail.models import DraftStateMixin, Page, RevisionMixin
 from wagtail.search import index
-from wagtail.snippets.models import register_snippet
-from wagtail.images.edit_handlers import ImageChooserPanel
 
 from bakerydemo.base.blocks import BaseStreamBlock
 
 
-@register_snippet
 class Country(models.Model):
     """
     A Django model to store set of countries of origin.
-    It uses the `@register_snippet` decorator to allow it to be accessible
-    via the Snippets UI (e.g. /admin/snippets/breads/country/) In the BreadPage
-    model you'll see we use a ForeignKey to create the relationship between
+    It is made accessible in the Wagtail admin interface through the CountrySnippetViewSet
+    class in wagtail_hooks.py. This allows us to customize the admin interface for this snippet.
+    In the BreadPage model you'll see we use a ForeignKey to create the relationship between
     Country and BreadPage. This allows a single relationship (e.g only one
     Country can be added) that is one-way (e.g. Country will have no way to
     access related BreadPage objects).
@@ -30,41 +25,60 @@ class Country(models.Model):
 
     title = models.CharField(max_length=100)
 
+    api_fields = [
+        APIField("title"),
+    ]
+
     def __str__(self):
         return self.title
 
     class Meta:
-        verbose_name_plural = "Countries of Origin"
+        verbose_name = "country of origin"
+        verbose_name_plural = "countries of origin"
 
 
-@register_snippet
-class BreadIngredient(models.Model):
+class BreadIngredient(DraftStateMixin, RevisionMixin, models.Model):
     """
-    Standard Django model that is displayed as a snippet within the admin due
-    to the `@register_snippet` decorator. We use a new piece of functionality
-    available to Wagtail called the ParentalManyToManyField on the BreadPage
+    A Django model to store a single ingredient.
+    It is made accessible in the Wagtail admin interface through the BreadIngredientSnippetViewSet
+    class in wagtail_hooks.py. This allows us to customize the admin interface for this snippet.
+    We use a piece of functionality available to Wagtail called the ParentalManyToManyField on the BreadPage
     model to display this. The Wagtail Docs give a slightly more detailed example
     https://docs.wagtail.org/en/stable/getting_started/tutorial.html#categories
     """
+
     name = models.CharField(max_length=255)
 
+    revisions = GenericRelation(
+        "wagtailcore.Revision",
+        content_type_field="base_content_type",
+        object_id_field="object_id",
+        related_query_name="bread_ingredient",
+        for_concrete_model=False,
+    )
+
     panels = [
-        FieldPanel('name'),
+        FieldPanel("name"),
+    ]
+
+    api_fields = [
+        APIField("name"),
     ]
 
     def __str__(self):
         return self.name
 
     class Meta:
-        verbose_name_plural = 'Bread ingredients'
+        verbose_name = "bread ingredient"
+        verbose_name_plural = "bread ingredients"
 
 
-@register_snippet
-class BreadType(models.Model):
+class BreadType(RevisionMixin, models.Model):
     """
     A Django model to define the bread type
-    It uses the `@register_snippet` decorator to allow it to be accessible
-    via the Snippets UI. In the BreadPage model you'll see we use a ForeignKey
+    It is made accessible in the Wagtail admin interface through the BreadTypeSnippetViewSet
+    class in wagtail_hooks.py. This allows us to customize the admin interface for this snippet.
+    In the BreadPage model you'll see we use a ForeignKey
     to create the relationship between BreadType and BreadPage. This allows a
     single relationship (e.g only one BreadType can be added) that is one-way
     (e.g. BreadType will have no way to access related BreadPage objects)
@@ -72,34 +86,46 @@ class BreadType(models.Model):
 
     title = models.CharField(max_length=255)
 
+    revisions = GenericRelation(
+        "wagtailcore.Revision",
+        content_type_field="base_content_type",
+        object_id_field="object_id",
+        related_query_name="bread_type",
+        for_concrete_model=False,
+    )
+
     panels = [
-        FieldPanel('title'),
+        FieldPanel("title"),
+    ]
+
+    api_fields = [
+        APIField("title"),
     ]
 
     def __str__(self):
         return self.title
 
     class Meta:
-        verbose_name_plural = "Bread types"
+        verbose_name = "bread type"
+        verbose_name_plural = "bread types"
 
 
 class BreadPage(Page):
     """
     Detail view for a specific bread
     """
-    introduction = models.TextField(
-        help_text='Text to describe the page',
-        blank=True)
+
+    introduction = models.TextField(help_text="Text to describe the page", blank=True)
     image = models.ForeignKey(
-        'wagtailimages.Image',
+        "wagtailimages.Image",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name='+',
-        help_text='Landscape mode only; horizontal width between 1000px and 3000px.'
+        related_name="+",
+        help_text="Landscape mode only; horizontal width between 1000px and 3000px.",
     )
     body = StreamField(
-        BaseStreamBlock(), verbose_name="Page body", blank=True
+        BaseStreamBlock(), verbose_name="Page body", blank=True, use_json_field=True
     )
     origin = models.ForeignKey(
         Country,
@@ -114,37 +140,46 @@ class BreadPage(Page):
     # relationship called `foopage_objects` that will throw a valueError on
     # collision.
     bread_type = models.ForeignKey(
-        'breads.BreadType',
+        "breads.BreadType",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name='+'
+        related_name="+",
     )
-    ingredients = ParentalManyToManyField('BreadIngredient', blank=True)
+    ingredients = ParentalManyToManyField("BreadIngredient", blank=True)
 
     content_panels = Page.content_panels + [
-        FieldPanel('introduction', classname="full"),
-        ImageChooserPanel('image'),
-        StreamFieldPanel('body'),
-        FieldPanel('origin'),
-        FieldPanel('bread_type'),
+        FieldPanel("introduction"),
+        FieldPanel("image"),
+        FieldPanel("body"),
+        FieldPanel("origin"),
+        FieldPanel("bread_type"),
         MultiFieldPanel(
             [
                 FieldPanel(
-                    'ingredients',
+                    "ingredients",
                     widget=forms.CheckboxSelectMultiple,
                 ),
             ],
             heading="Additional Metadata",
-            classname="collapsible collapsed"
+            classname="collapsed",
         ),
     ]
 
     search_fields = Page.search_fields + [
-        index.SearchField('body'),
+        index.SearchField("body"),
     ]
 
-    parent_page_types = ['BreadsIndexPage']
+    parent_page_types = ["BreadsIndexPage"]
+
+    api_fields = [
+        APIField("introduction"),
+        APIField("image"),
+        APIField("body"),
+        APIField("origin"),
+        APIField("bread_type"),
+        APIField("ingredients"),
+    ]
 
 
 class BreadsIndexPage(Page):
@@ -156,32 +191,35 @@ class BreadsIndexPage(Page):
     to be discrete functions to make it easier to follow
     """
 
-    introduction = models.TextField(
-        help_text='Text to describe the page',
-        blank=True)
+    introduction = models.TextField(help_text="Text to describe the page", blank=True)
     image = models.ForeignKey(
-        'wagtailimages.Image',
+        "wagtailimages.Image",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name='+',
-        help_text='Landscape mode only; horizontal width between 1000px and '
-        '3000px.'
+        related_name="+",
+        help_text="Landscape mode only; horizontal width between 1000px and 3000px.",
     )
 
     content_panels = Page.content_panels + [
-        FieldPanel('introduction', classname="full"),
-        ImageChooserPanel('image'),
+        FieldPanel("introduction"),
+        FieldPanel("image"),
     ]
 
     # Can only have BreadPage children
-    subpage_types = ['BreadPage']
+    subpage_types = ["BreadPage"]
+
+    api_fields = [
+        APIField("introduction"),
+        APIField("image"),
+    ]
 
     # Returns a queryset of BreadPage objects that are live, that are direct
     # descendants of this index page with most recent first
     def get_breads(self):
-        return BreadPage.objects.live().descendant_of(
-            self).order_by('-first_published_at')
+        return (
+            BreadPage.objects.live().descendant_of(self).order_by("-first_published_at")
+        )
 
     # Allows child objects (e.g. BreadPage objects) to be accessible via the
     # template. We use this on the HomePage to display child items of featured
@@ -193,7 +231,7 @@ class BreadsIndexPage(Page):
     # standard Django app would, but the difference here being we have it as a
     # method on the model rather than within a view function
     def paginate(self, request, *args):
-        page = request.GET.get('page')
+        page = request.GET.get("page")
         paginator = Paginator(self.get_breads(), 12)
         try:
             pages = paginator.page(page)
@@ -211,6 +249,6 @@ class BreadsIndexPage(Page):
         # BreadPage objects (get_breads) are passed through pagination
         breads = self.paginate(request, self.get_breads())
 
-        context['breads'] = breads
+        context["breads"] = breads
 
         return context
